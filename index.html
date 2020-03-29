@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>15 puzzle</title>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+  </div>
+
+  <script src="react.development.js"></script>
+  <script src="react-dom.development.js"></script>
+  <script src="babel.min.js"></script>
+  <script src="priority-queue.min.js"></script>
+  <script type="text/babel">
+    class Tile extends React.Component {
+      render() {
+        if (this.props.value) {
+          return (
+            <button type="button" className="board__tile" data-position={this.props.position}>{this.props.value}</button>
+          );
+        }
+
+        return (
+          <div className="board__tile board__tile_space" data-position={this.props.position}></div>
+        );
+      }
+    }
+
+    class Board extends React.Component {
+      constructor(props) {
+        super(props);
+        this.handleClick = this.handleClick.bind(this);
+      }
+
+      handleClick(evt) {
+        this.props.onTileClick(parseInt(evt.target.dataset.position, 10) - 1);
+      }
+
+      render() {
+        if (this.props.solved) {
+          return (
+            <div className={"board board_size-" + this.props.size}>
+              <p className="board__message">Congratulations! You solved it!</p>
+            </div>
+          );
+        }
+
+        return (
+          <div className={"board board_size-" + this.props.size} onClick={this.handleClick}>
+            {this.props.state.map((number, index) =>
+              <Tile value={number} position={index + 1} key={number}></Tile>
+            )}
+          </div>
+        );
+      }
+    }
+
+    class Game extends React.Component {
+      constructor(props) {
+        super(props);
+        this.n = this.props.size;
+        this.length = this.n * this.n;
+        this.state = this.initializeGame(this.generateRandomState());
+        this.endState = this.getNumberSequence().push(0);
+
+        this.moveTile = this.moveTile.bind(this);
+        this.stepBack = this.stepBack.bind(this);
+        this.restartGame = this.restartGame.bind(this);
+        this.newGame = this.newGame.bind(this);
+      }
+
+      getNumberSequence() {
+        return [...Array(this.length).keys()].slice(1);
+      }
+
+      generateRandomState() {
+        const array = [];
+        let numbers = this.getNumberSequence();
+
+        while (numbers.length) {
+          array.push(numbers.splice(Math.floor(Math.random() * (numbers.length - 1)), 1)[0]);
+        }
+
+        array.push(0);
+
+        if (!this.isSolvable(array)) {
+          [array[0], array[1]] = [array[1], array[0]];
+        }
+
+        return array;
+      }
+
+      initializeGame(initialState) {
+        this.solveGame(initialState);
+
+        return {
+          history: [initialState],
+          current: initialState,
+          moves: 0,
+          solved: false
+        }
+      }
+
+      newGame(size) {
+        this.setState((state) => {
+          return this.initializeGame(this.generateRandomState());
+        });
+      }
+
+      restartGame() {
+        this.setState((state) => {
+          return this.initializeGame(this.state.history[0]);
+        });
+      }
+
+      moveTile(position) {
+        let newState = this.state.current.slice();
+
+        if (newState[position - 1] === 0 && position % this.n !== 0) {
+          [newState[position], newState[position - 1]] = [newState[position - 1], newState[position]];
+        } else if (newState[position + 1] === 0 && position % this.n !== this.n - 1) {
+          [newState[position], newState[position + 1]] = [newState[position + 1], newState[position]];
+        } else if (newState[position - this.n] === 0) {
+          [newState[position], newState[position - this.n]] = [newState[position - this.n], newState[position]];
+        } else if (newState[position + this.n] === 0) {
+          [newState[position], newState[position + this.n]] = [newState[position + this.n], newState[position]];
+        } else {
+          newState = null;
+        }
+
+        if (newState) {
+          this.setState((state) => {
+            return {
+              history: [...state.history, newState],
+              current: newState,
+              moves: state.moves + 1,
+              solved: this.isFinalState(newState)
+            }
+          });
+        }
+      }
+
+      stepBack() {
+        if (this.state.moves) {
+          this.setState((state) => {
+            state.history.pop();
+
+            return {
+              current: state.history.slice(-1)[0],
+              moves: state.moves - 1
+            }
+          });
+        }
+      }
+
+      isFinalState(state) {
+        return state.every((value, index) => value === (index + 1) % this.length);
+      }
+
+      getNewStates(state) {
+        const spacePosition = state.indexOf(0);
+        let newStates = [];
+
+        if (spacePosition % this.n !== 0) {
+          const leftState = state.slice();
+          [leftState[spacePosition], leftState[spacePosition - 1]] = [leftState[spacePosition - 1], leftState[spacePosition]];
+          newStates.push(leftState);
+        }
+        if (spacePosition % this.n !== this.n - 1) {
+          const rightState = state.slice();
+          [rightState[spacePosition], rightState[spacePosition + 1]] = [rightState[spacePosition + 1], rightState[spacePosition]];
+          newStates.push(rightState);
+        }
+        if (spacePosition - this.n >= 0) {
+          const topState = state.slice();
+          [topState[spacePosition], topState[spacePosition - this.n]] = [topState[spacePosition - this.n], topState[spacePosition]];
+          newStates.push(topState);
+        }
+        if (spacePosition + this.n < this.length) {
+          const bottomState = state.slice();
+          [bottomState[spacePosition], bottomState[spacePosition + this.n]] = [bottomState[spacePosition + this.n], bottomState[spacePosition]];
+          newStates.push(bottomState);
+        }
+
+        return newStates;
+      }
+
+      solveGame(initialState) {
+        let explored = {};
+        let frontier = new PriorityQueue({ comparator: function(a, b) { return a[1] - b[1]; }});
+      }
+
+      isSolvable(state) {
+        let inversion = 0;
+        for (let i = 0; i < state.length; i++) {
+          for (let j = i + 1; j < state.length; j++) {
+            if (state[i] > state[j] && state[i] != 0 && state[j] != 0) {
+              inversion += 1;
+            }
+          }
+        }
+
+        return inversion % 2 === 0;
+      }
+
+      render() {
+        return (
+          <div>
+            <h1>15 Puzzle</h1>
+            <p>Moves: {this.state.moves}</p>
+            <button type="button" onClick={this.stepBack}>Back</button>
+            <button type="button" onClick={this.restartGame}>Restart</button>
+            <button type="button" onClick={this.newGame}>New Game</button>
+            <Board size={this.n} state={this.state.current} solved={this.state.solved} onTileClick={this.moveTile}></Board>
+          </div>
+        );
+      }
+    }
+
+    ReactDOM.render(
+      <Game size={4} />,
+      document.getElementById('app')
+    );
+  </script>
+</body>
+</html>
